@@ -1,4 +1,6 @@
 import pandas as pd
+from kafka_consumer import consume_interactions  # Ensure this module exists
+#from recommendation_model import get_recommendations  # Assuming you have this model function
 
 # Movie recommendation function
 def get_movie_recommendations(title, df, similarity_matrix):
@@ -40,3 +42,35 @@ def get_music_recommendations(artist, song_title, df, similarity_matrix):
     recommended_songs = [df['song'].iloc[i[0]] for i in sorted_scores[1:6]]
 
     return recommended_songs
+
+def real_time_recommendations(df, movie_similarity_matrix, music_similarity_matrix):
+    while True:
+        user_interaction = consume_interactions()  # Get real-time interaction
+        
+        # Assuming user_interaction is a dictionary with keys 'movie_title', 'artist', 'song_title'
+        movie_title = user_interaction.get('movie_title')
+        artist = user_interaction.get('artist')
+        song_title = user_interaction.get('song_title')
+
+        recommendations = []
+
+        # Generate movie recommendations if movie title is provided
+        if movie_title:
+            try:
+                movie_recommendations = get_movie_recommendations(movie_title, df, movie_similarity_matrix)
+                recommendations.append({"type": "movie", "recommendations": movie_recommendations})
+            except ValueError as e:
+                print(e)
+
+        # Generate music recommendations if artist and song title are provided
+        if artist and song_title:
+            try:
+                music_recommendations = get_music_recommendations(artist, song_title, df, music_similarity_matrix)
+                recommendations.append({"type": "music", "recommendations": music_recommendations})
+            except ValueError as e:
+                print(e)
+
+        # Send recommendations back or update your recommendation store
+        print(recommendations)
+
+
