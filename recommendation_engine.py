@@ -1,53 +1,51 @@
 import pandas as pd
 from kafka_consumer import consume_interactions  # Ensure this module exists
-#from recommendation_model import get_recommendations  # Assuming you have this model function
 
 # Movie recommendation function
-def get_movie_recommendations(title, df, similarity_matrix):
-    # Check if the title exists in the dataset
-    if title not in df['title'].values:
+def get_movie_recommendations(title, movie_df, similarity_matrix, top_n=5):
+    """
+    Generate top movie recommendations based on similarity scores.
+    """
+    if title not in movie_df['title'].values:
         raise ValueError(f"Title '{title}' not found in dataset.")
 
-    # Get the index of the movie
-    index = df[df['title'] == title].index[0]
-
-    # Compute similarity scores
+    # Get index and similarity scores
+    index = movie_df[movie_df['title'] == title].index[0]
     similarity_scores = list(enumerate(similarity_matrix[index]))
 
-    # Sort scores based on similarity, excluding the first (which is the same movie)
+    # Sort and get top N recommendations
     sorted_scores = sorted(similarity_scores, key=lambda x: x[1], reverse=True)
-
-    # Get top 5 recommendations (excluding the movie itself)
-    recommended_titles = [df['title'].iloc[i[0]] for i in sorted_scores[1:6]]
+    recommended_titles = [movie_df['title'].iloc[i[0]] for i in sorted_scores[1:top_n + 1]]
 
     return recommended_titles
 
 # Music recommendation function
-def get_music_recommendations(artist, song_title, df, similarity_matrix):
-    # Check if the artist and song exist in the dataset
-    song_exists = df[(df['artist'] == artist) & (df['song'] == song_title)]
+def get_music_recommendations(artist, song_title, music_df, similarity_matrix, top_n=5):
+    """
+    Generate top music recommendations based on similarity scores.
+    """
+    song_exists = music_df[(music_df['artist'] == artist) & (music_df['song'] == song_title)]
     if song_exists.empty:
         raise ValueError(f"Song '{song_title}' by artist '{artist}' not found in dataset.")
 
-    # Get the index of the song
+    # Get index and similarity scores
     index = song_exists.index[0]
-
-    # Compute similarity scores
     similarity_scores = list(enumerate(similarity_matrix[index]))
 
-    # Sort scores based on similarity, excluding the first (which is the same song)
+    # Sort and get top N recommendations
     sorted_scores = sorted(similarity_scores, key=lambda x: x[1], reverse=True)
-
-    # Get top 5 recommendations (excluding the song itself)
-    recommended_songs = [df['song'].iloc[i[0]] for i in sorted_scores[1:6]]
+    recommended_songs = [music_df['song'].iloc[i[0]] for i in sorted_scores[1:top_n + 1]]
 
     return recommended_songs
 
-def real_time_recommendations(df, movie_similarity_matrix, music_similarity_matrix):
+# Real-time recommendation engine
+def real_time_recommendations(movie_df, movie_similarity_matrix, music_df, music_similarity_matrix):
+    """
+    Continuously listen for user interactions and provide recommendations.
+    """
     while True:
         user_interaction = consume_interactions()  # Get real-time interaction
-        
-        # Assuming user_interaction is a dictionary with keys 'movie_title', 'artist', 'song_title'
+
         movie_title = user_interaction.get('movie_title')
         artist = user_interaction.get('artist')
         song_title = user_interaction.get('song_title')
@@ -57,20 +55,19 @@ def real_time_recommendations(df, movie_similarity_matrix, music_similarity_matr
         # Generate movie recommendations if movie title is provided
         if movie_title:
             try:
-                movie_recommendations = get_movie_recommendations(movie_title, df, movie_similarity_matrix)
+                movie_recommendations = get_movie_recommendations(movie_title, movie_df, movie_similarity_matrix)
                 recommendations.append({"type": "movie", "recommendations": movie_recommendations})
             except ValueError as e:
-                print(e)
+                print(f"Movie recommendation error: {e}")
 
         # Generate music recommendations if artist and song title are provided
         if artist and song_title:
             try:
-                music_recommendations = get_music_recommendations(artist, song_title, df, music_similarity_matrix)
+                music_recommendations = get_music_recommendations(artist, song_title, music_df, music_similarity_matrix)
                 recommendations.append({"type": "music", "recommendations": music_recommendations})
             except ValueError as e:
-                print(e)
+                print(f"Music recommendation error: {e}")
 
-        # Send recommendations back or update your recommendation store
-        print(recommendations)
-
-
+        # Output or store recommendations
+        if recommendations:
+            print(recommendations)  # Replace with your storage solution if needed

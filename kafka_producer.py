@@ -1,11 +1,8 @@
 from confluent_kafka import Producer
 
-# Configuration for Kafka producer with batching, compression, and linger time
+# Basic configuration for Kafka producer
 producer_config = {
-    'bootstrap.servers': 'localhost:9092',  # Adjust to your Kafka setup
-    'linger.ms': 10,  # Wait for 10ms to batch messages
-    'batch.size': 65536,  # 64 KB batch size for more efficient delivery
-    'compression.type': 'gzip'  # Compress messages to reduce size and network usage
+    'bootstrap.servers': 'localhost:9092'  # Basic setup, connecting to local Kafka broker
 }
 
 # Create a Kafka producer
@@ -28,10 +25,9 @@ def send_user_interaction(interaction_data):
     message = str(interaction_data)
     
     # Send the message to Kafka topic
-    # You can also specify a key if needed, e.g., key='user_id'
-    producer.produce(topic, key=None, value=message, callback=delivery_report)
+    producer.produce(topic, value=message, callback=delivery_report)
     producer.flush()  # Ensure all messages are sent before closing the producer
 
-# Example usage:
+# Example usage
 interaction = {'user_id': 123, 'interaction_type': 'click', 'timestamp': '2024-10-25T12:34:56'}
 send_user_interaction(interaction)
