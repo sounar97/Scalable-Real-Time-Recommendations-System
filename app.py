@@ -1,96 +1,93 @@
-# app.py
 from flask import Flask, request, jsonify
-import time
+from flask_cors import CORS
+import pickle
 import logging
-from kafka_producer import create_kafka_producer
-from kafka_consumer import start_consumer_threads, movie_results, music_results
-from config import MOVIE_REQUEST_TOPIC, MUSIC_REQUEST_TOPIC
+from recommendation_engine import get_movie_recommendations, get_music_recommendations
+from kafka_producer import send_user_interaction  # Import Kafka producer
+from kafka_consumer import consume_interactions  # Import Kafka consumer
+import threading
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+# Initialize Flask application
 app = Flask(__name__)
-producer = create_kafka_producer()
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'timestamp': time.time()})
+# Enable CORS for all routes
+CORS(app)
 
-@app.route('/api/v1/movies/recommend', methods=['POST'])
-def movie_recommendations():
-    """Endpoint for movie recommendations"""
-    try:
-        data = request.get_json()
-        if not data or 'title' not in data:
-            return jsonify({'error': 'Missing title in request'}), 400
+# Set up logging
+logging.basicConfig(level=logging.INFO)
 
-        request_id = str(time.time())
-        message = {
-            'title': data['title'],
-            'request_id': request_id
-        }
-        
-        producer.send(MOVIE_REQUEST_TOPIC, message)
-        producer.flush()
-        
-        return jsonify({
-            'request_id': request_id,
-            'message': 'Request received, processing recommendations'
-        })
+# Load preprocessed movie and music data and similarity matrices
+try:
+    with open('Training/movies_list.pkl', 'rb') as file:
+        movie_df = pickle.load(file)
+
+    with open('Data/similarity.pkl', 'rb') as file:
+        movie_similarity = pickle.load(file)
+
+    with open('Training/df.pkl', 'rb') as file:
+        music_df = pickle.load(file)
+
+    with open('Data/similarity02.pkl', 'rb') as file:
+        music_similarity = pickle.load(file)
+
+except Exception as e:
+    logging.error(f"Error loading data: {str(e)}")
+    raise
+
+# Start the real-time recommendations in a separate thread or as a background task
+def start_real_time_recommendations():
+    while True:
+        user_interaction = consume_interactions()  # Get real-time interaction from Kafka
+        if user_interaction:
+            recommendations = get_movie_recommendations(user_interaction['title'], movie_df, movie_similarity)
+            logging.info(f"Real-time recommendation for {user_interaction['title']}: {recommendations}")
+
+# Run the real-time recommendation engine in a separate thread
+threading.Thread(target=start_real_time_recommendations, daemon=True).start()
+
+# Route to track and send user interactions to Kafka
+@app.route('/api/track_interaction', methods=['POST'])
+def track_interaction():
+    data = request.get_json()
+    interaction = data.get('interaction')
     
-    except Exception as e:
-        logger.error(f"Error in movie recommendations: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+    if not interaction:
+        return jsonify({'status': 'error', 'message': 'No interaction data provided'}), 400
 
-@app.route('/api/v1/music/recommend', methods=['POST'])
-def music_recommendations():
-    """Endpoint for music recommendations"""
-    try:
-        data = request.get_json()
-        if not data or 'song' not in data:
-            return jsonify({'error': 'Missing song in request'}), 400
-
-        request_id = str(time.time())
-        message = {
-            'song': data['song'],
-            'request_id': request_id
-        }
-        
-        producer.send(MUSIC_REQUEST_TOPIC, message)
-        producer.flush()
-        
-        return jsonify({
-            'request_id': request_id,
-            'message': 'Request received, processing recommendations'
-        })
+    # Send the interaction to Kafka
+    send_user_interaction({'interaction': interaction})
     
+    return jsonify({'status': 'success', 'message': 'Interaction sent to Kafka'}), 200
+
+# Movie recommendation route
+@app.route('/recommend/movie', methods=['GET'])
+def recommend_movie():
+    title = request.args.get('title')
+    if not title:
+        return jsonify({'status': 'error', 'message': 'Title parameter is required'}), 400
+
+    try:
+        recommendations = get_movie_recommendations(title, movie_df, movie_similarity)
+        return jsonify({'status': 'success', 'recommendations': recommendations})
     except Exception as e:
-        logger.error(f"Error in music recommendations: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error getting movie recommendations: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@app.route('/api/v1/movies/results/<request_id>', methods=['GET'])
-def get_movie_results(request_id):
-    """Get movie recommendation results"""
-    result = movie_results.get(request_id)
-    if result:
-        return jsonify(result)
-    return jsonify({'error': 'Results not found or still processing'}), 404
+# Music recommendation route
+@app.route('/recommend/music', methods=['GET'])
+def recommend_music():
+    artist = request.args.get('artist')
+    song = request.args.get('song')
+    
+    if not artist or not song:
+        return jsonify({'status': 'error', 'message': 'Artist and song parameters are required'}), 400
 
-@app.route('/api/v1/music/results/<request_id>', methods=['GET'])
-def get_music_results(request_id):
-    """Get music recommendation results"""
-    result = music_results.get(request_id)
-    if result:
-        return jsonify(result)
-    return jsonify({'error': 'Results not found or still processing'}), 404
+    try:
+        recommendations = get_music_recommendations(artist, song, music_df, music_similarity)
+        return jsonify({'status': 'success', 'recommendations': recommendations})
+    except Exception as e:
+        logging.error(f"Error getting music recommendations: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
-    start_consumer_threads()
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
-
-
-
-
+    app.run(debug=True)
