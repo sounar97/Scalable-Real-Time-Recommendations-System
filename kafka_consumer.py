@@ -1,40 +1,62 @@
-from confluent_kafka import Consumer, KafkaException
+# kafka_consumer.py
+from kafka import KafkaConsumer
+import json
+import threading
+import logging
+from collections import defaultdict
+from config import (
+    KAFKA_BOOTSTRAP_SERVERS, 
+    MOVIE_REQUEST_TOPIC, 
+    MUSIC_REQUEST_TOPIC,
+    MOVIE_RESPONSE_TOPIC,
+    MUSIC_RESPONSE_TOPIC
+)
+from recommendation_engine import get_movie_recommendations, get_music_recommendations
+from kafka_producer import create_kafka_producer
 
-# Basic configuration for Kafka consumer
-consumer_config = {
-    'bootstrap.servers': 'localhost:9092',
-    'group.id': 'my-group',  # Consumer group ID for Kafka
-    'auto.offset.reset': 'earliest'  # Start reading from the beginning
-}
+logger = logging.getLogger(__name__)
+producer = create_kafka_producer()
 
-# Create a Kafka consumer
-consumer = Consumer(consumer_config)
+# In-memory storage for results
+movie_results = defaultdict(dict)
+music_results = defaultdict(dict)
 
-# Subscribe to the user interactions topic
-consumer.subscribe(['user_interactions'])
-
-def consume_interactions():
-    """
-    Consume user interaction messages from Kafka.
-    """
+def create_kafka_consumer(topic):
+    """Create and return a Kafka consumer instance"""
     try:
-        # Poll for new messages with the specified timeout
-        msg = consumer.poll(timeout=1.0)
-        if msg is None:
-            return None
-        if msg.error():
-            raise KafkaException(msg.error())
-        
-        # Deserialize the message back into a Python object
-        interaction = msg.value().decode('utf-8')
-        return interaction
-    
+        consumer = KafkaConsumer(
+            topic,
+            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+            value_deserializer=lambda x: json.loads(x.decode('utf-8')),
+            auto_offset_reset='latest',
+            enable_auto_commit=True
+        )
+        return consumer
     except Exception as e:
-        print(f"Error in Kafka consumer: {e}")
-        return None
+        logger.error(f"Error creating Kafka consumer: {str(e)}")
+        raise
 
-# Example usage of the consumer function
-while True:
-    interaction = consume_interactions()
-    if interaction:
-        print("Consumed interaction:", interaction)
+def movie_consumer_thread():
+    """Thread to handle movie recommendation requests"""
+    consumer = create_kafka_consumer(MOVIE_REQUEST_TOPIC)
+    for message in consumer:
+        data = message.value
+        response = get_movie_recommendations(data['title'], data['request_id'])
+        movie_results[data['request_id']] = response  # Store results
+        producer.send(MOVIE_RESPONSE_TOPIC, response)
+        producer.flush()
+
+def music_consumer_thread():
+    """Thread to handle music recommendation requests"""
+    consumer = create_kafka_consumer(MUSIC_REQUEST_TOPIC)
+    for message in consumer:
+        data = message.value
+        response = get_music_recommendations(data['song'], data['request_id'])
+        music_results[data['request_id']] = response  # Store results
+        producer.send(MUSIC_RESPONSE_TOPIC, response)
+        producer.flush()
+
+def start_consumer_threads():
+    """Start all consumer threads"""
+    threading.Thread(target=movie_consumer_thread, daemon=True).start()
+    threading.Thread(target=music_consumer_thread, daemon=True).start()
