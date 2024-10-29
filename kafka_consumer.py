@@ -1,40 +1,70 @@
-from confluent_kafka import Consumer, KafkaException
+# recommendation_engine.py
+import pickle
+import logging
 
-# Basic configuration for Kafka consumer
-consumer_config = {
-    'bootstrap.servers': 'localhost:9092',
-    'group.id': 'my-group',  # Consumer group ID for Kafka
-    'auto.offset.reset': 'earliest'  # Start reading from the beginning
-}
+logger = logging.getLogger(__name__)
 
-# Create a Kafka consumer
-consumer = Consumer(consumer_config)
+# Load recommendation models
+try:
+    movies_df = pickle.load(open('movies_list.pkl', 'rb'))
+    movies_similarity = pickle.load(open('similarity.pkl', 'rb'))
+    music_df = pickle.load(open('df.pkl', 'rb'))
+    music_similarity = pickle.load(open('similarity.pkl', 'rb'))
+    logger.info("Models loaded successfully")
+except Exception as e:
+    logger.error(f"Error loading models: {str(e)}")
+    raise
 
-# Subscribe to the user interactions topic
-consumer.subscribe(['user_interactions'])
-
-def consume_interactions():
-    """
-    Consume user interaction messages from Kafka.
-    """
+def get_movie_recommendations(title, request_id):
+    """Generate movie recommendations"""
     try:
-        # Poll for new messages with the specified timeout
-        msg = consumer.poll(timeout=1.0)
-        if msg is None:
-            return None
-        if msg.error():
-            raise KafkaException(msg.error())
+        idx = movies_df[movies_df['title'] == title].index[0]
+        distances = sorted(list(enumerate(movies_similarity[idx])), reverse=True, key=lambda x: x[1])
+        recommendations = []
         
-        # Deserialize the message back into a Python object
-        interaction = msg.value().decode('utf-8')
-        return interaction
-    
+        for i in distances[1:6]:  # Get top 5 recommendations
+            movie_data = movies_df.iloc[i[0]]
+            recommendations.append({
+                'title': movie_data['title'],
+                'genre': movie_data['genre'],
+                'similarity_score': float(i[1])
+            })
+        
+        return {
+            'request_id': request_id,
+            'status': 'success',
+            'recommendations': recommendations
+        }
     except Exception as e:
-        print(f"Error in Kafka consumer: {e}")
-        return None
+        return {
+            'request_id': request_id,
+            'status': 'error',
+            'error': str(e)
+        }
 
-# Example usage of the consumer function
-while True:
-    interaction = consume_interactions()
-    if interaction:
-        print("Consumed interaction:", interaction)
+def get_music_recommendations(title, request_id):
+    """Generate music recommendations"""
+    try:
+        idx = music_df[music_df['song'] == title].index[0]
+        distances = sorted(list(enumerate(music_similarity[idx])), reverse=True, key=lambda x: x[1])
+        recommendations = []
+        
+        for i in distances[1:6]:  # Get top 5 recommendations
+            song_data = music_df.iloc[i[0]]
+            recommendations.append({
+                'song': song_data['song'],
+                'artist': song_data['artist'],
+                'similarity_score': float(i[1])
+            })
+        
+        return {
+            'request_id': request_id,
+            'status': 'success',
+            'recommendations': recommendations
+        }
+    except Exception as e:
+        return {
+            'request_id': request_id,
+            'status': 'error',
+            'error': str(e)
+        }
