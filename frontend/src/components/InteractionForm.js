@@ -1,45 +1,49 @@
+// InteractionForm.js
 import React, { useState } from 'react';
 import axios from 'axios';
 
-function InteractionForm({ setMovieRecommendations, setMusicRecommendations }) {
+function InteractionForm({ setMovieRequestId, setMusicRequestId }) {
   const [movieTitle, setMovieTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [songTitle, setSongTitle] = useState('');
   const [loadingMovie, setLoadingMovie] = useState(false);
   const [loadingMusic, setLoadingMusic] = useState(false);
 
-  const handleMovieSubmit = (e) => {
+  const handleMovieSubmit = async (e) => {
     e.preventDefault();
     if (!movieTitle) return alert("Please enter a movie title");
 
     setLoadingMovie(true);
-    axios.get(`http://localhost:5000/recommend/movie?title=${movieTitle}`)
-      .then(response => {
-        setMovieRecommendations(response.data.recommendations);
-        sendInteractionToKafka({ interaction: `Viewed movie: ${movieTitle}` });
-      })
-      .catch(err => console.error('Error fetching movie recommendations:', err))
-      .finally(() => setLoadingMovie(false));
+    try {
+      const response = await axios.post(`http://localhost:5000/api/v1/movies/recommend`, {
+        title: movieTitle,
+      });
+      setMovieRequestId(response.data.request_id);
+    } catch (error) {
+      console.error('Error fetching movie recommendations:', error);
+      alert('Failed to fetch movie recommendations.');
+    } finally {
+      setLoadingMovie(false);
+    }
   };
 
-  const handleMusicSubmit = (e) => {
+  const handleMusicSubmit = async (e) => {
     e.preventDefault();
     if (!artist || !songTitle) return alert("Please enter both artist and song title");
 
     setLoadingMusic(true);
-    axios.get(`http://localhost:5000/recommend/music?artist=${artist}&song=${songTitle}`)
-      .then(response => {
-        setMusicRecommendations(response.data.recommendations);
-        sendInteractionToKafka({ interaction: `Played song: ${songTitle} by ${artist}` });
-      })
-      .catch(err => console.error('Error fetching music recommendations:', err))
-      .finally(() => setLoadingMusic(false));
-  };
-
-  const sendInteractionToKafka = (interactionData) => {
-    axios.post('http://localhost:5000/api/track_interaction', interactionData)
-      .then(response => console.log('Interaction sent to Kafka:', response.data))
-      .catch(err => console.error('Error sending interaction to Kafka:', err));
+    try {
+      const response = await axios.post(`http://localhost:5000/api/v1/music/recommend`, {
+        song: songTitle,
+        artist,
+      });
+      setMusicRequestId(response.data.request_id);
+    } catch (error) {
+      console.error('Error fetching music recommendations:', error);
+      alert('Failed to fetch music recommendations.');
+    } finally {
+      setLoadingMusic(false);
+    }
   };
 
   return (
