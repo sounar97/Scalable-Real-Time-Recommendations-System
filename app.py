@@ -89,3 +89,25 @@ def get_music_results(request_id):
 if __name__ == '__main__':
     start_consumer_threads()
     app.run(host='0.0.0.0', port=5000, debug=True)
+
+@app.route('/api/v1/user-events', methods=['POST'])
+def handle_user_event():
+    try:
+        data = request.get_json()
+        if not data or 'event' not in data or 'user_id' not in data or 'item_id' not in data:
+            return jsonify({'error': 'Missing required fields in request'}), 400
+
+        event = {
+            'user_id': data['user_id'],
+            'item_id': data['item_id'],
+            'event': data['event'],
+            'timestamp': time.time()
+        }
+
+        producer.send('user-interactions', event)
+        producer.flush()
+
+        return jsonify({'message': 'Event received'}), 200
+    except Exception as e:
+        logger.error(f"Error handling user event: {str(e)}")
+        return jsonify({'error': str(e)}), 500
