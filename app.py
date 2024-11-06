@@ -25,21 +25,25 @@ def movie_recommendations():
         data = request.get_json()
         if not data or 'title' not in data:
             return jsonify({'error': 'Missing title in request'}), 400
-
         request_id = str(time.time())
         message = {
             'title': data['title'],
             'request_id': request_id
         }
-        
         producer.send(MOVIE_REQUEST_TOPIC, message)
         producer.flush()
-        
+
+        # Capture user interaction data
+        interaction_data = {
+            'title': data['title'],
+            'interaction_type': 'movie_recommendation_request'
+        }
+        send_interaction_to_kafka(interaction_data)
+
         return jsonify({
             'request_id': request_id,
             'message': 'Request received, processing recommendations'
         })
-    
     except Exception as e:
         logger.error(f"Error in movie recommendations: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -51,21 +55,25 @@ def music_recommendations():
         data = request.get_json()
         if not data or 'song' not in data:
             return jsonify({'error': 'Missing song in request'}), 400
-
         request_id = str(time.time())
         message = {
             'song': data['song'],
             'request_id': request_id
         }
-        
         producer.send(MUSIC_REQUEST_TOPIC, message)
         producer.flush()
-        
+
+        # Capture user interaction data
+        interaction_data = {
+            'song': data['song'],
+            'interaction_type': 'music_recommendation_request'
+        }
+        send_interaction_to_kafka(interaction_data)
+
         return jsonify({
             'request_id': request_id,
             'message': 'Request received, processing recommendations'
         })
-    
     except Exception as e:
         logger.error(f"Error in music recommendations: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -90,24 +98,22 @@ if __name__ == '__main__':
     start_consumer_threads()
     app.run(host='0.0.0.0', port=5000, debug=True)
 
-@app.route('/api/v1/user-events', methods=['POST'])
-def handle_user_event():
+@app.route('/api/v1/track_interaction', methods=['POST'])
+def track_interaction():
     try:
         data = request.get_json()
-        if not data or 'event' not in data or 'user_id' not in data or 'item_id' not in data:
+        if not data or 'request_id' not in data or 'interaction_type' not in data:
             return jsonify({'error': 'Missing required fields in request'}), 400
 
-        event = {
-            'user_id': data['user_id'],
-            'item_id': data['item_id'],
-            'event': data['event'],
-            'timestamp': time.time()
-        }
+        # Send the interaction data to the Kafka producer
+        send_interaction_to_kafka(data)
 
-        producer.send('user-interactions', event)
-        producer.flush()
-
-        return jsonify({'message': 'Event received'}), 200
+        return jsonify({'status': 'success'})
     except Exception as e:
-        logger.error(f"Error handling user event: {str(e)}")
+        logger.error(f"Error tracking interaction: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+def send_interaction_to_kafka(interaction_data):
+    """Send user interaction data to Kafka"""
+    producer.send(USER_INTERACTION_TOPIC, interaction_data)
+    producer.flush()
