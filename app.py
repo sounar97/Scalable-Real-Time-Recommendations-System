@@ -109,13 +109,15 @@ def track_interaction():
         if not data or 'request_id' not in data or 'interaction_type' not in data:
             return jsonify({'error': 'Missing required fields in request'}), 400
 
-        producer = create_kafka_producer()
-        send_interaction_to_kafka(data, producer)
+        # Unpack both producers and use `int_producer`
+        _, int_producer = create_kafka_producer()
+        send_interaction_to_kafka(data, int_producer)
 
         return jsonify({'status': 'success'})
     except Exception as e:
         logger.error(f"Error tracking interaction: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     start_consumer_threads()
