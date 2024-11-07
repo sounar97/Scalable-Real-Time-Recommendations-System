@@ -2,9 +2,9 @@
 from flask import Flask, request, jsonify
 import time
 import logging
-from kafka_producer import create_kafka_producer
+from kafka_producer import create_kafka_producer,send_interaction_to_kafka
 from kafka_consumer import start_consumer_threads, movie_results, music_results
-from config import MOVIE_REQUEST_TOPIC, MUSIC_REQUEST_TOPIC
+from config import MOVIE_REQUEST_TOPIC, MUSIC_REQUEST_TOPIC,USER_INTERACTION_TOPIC
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,15 +30,18 @@ def movie_recommendations():
             'title': data['title'],
             'request_id': request_id
         }
-        producer.send(MOVIE_REQUEST_TOPIC, message)
-        producer.flush()
+
+        rec_producer, int_producer = create_kafka_producer()
+        rec_producer.send(MOVIE_REQUEST_TOPIC, message)
+        rec_producer.flush()
 
         # Capture user interaction data
         interaction_data = {
             'title': data['title'],
             'interaction_type': 'movie_recommendation_request'
         }
-        send_interaction_to_kafka(interaction_data)
+        int_producer.send(USER_INTERACTION_TOPIC, interaction_data)
+        int_producer.flush()
 
         return jsonify({
             'request_id': request_id,
@@ -60,15 +63,18 @@ def music_recommendations():
             'song': data['song'],
             'request_id': request_id
         }
-        producer.send(MUSIC_REQUEST_TOPIC, message)
-        producer.flush()
+
+        rec_producer, int_producer = create_kafka_producer()
+        rec_producer.send(MUSIC_REQUEST_TOPIC, message)
+        rec_producer.flush()
 
         # Capture user interaction data
         interaction_data = {
             'song': data['song'],
             'interaction_type': 'music_recommendation_request'
         }
-        send_interaction_to_kafka(interaction_data)
+        int_producer.send(USER_INTERACTION_TOPIC, interaction_data)
+        int_producer.flush()
 
         return jsonify({
             'request_id': request_id,
@@ -84,7 +90,8 @@ def get_movie_results(request_id):
     result = movie_results.get(request_id)
     if result:
         return jsonify(result)
-    return jsonify({'error': 'Results not found or still processing'}), 404
+    else:
+        return jsonify({'error': 'Results not found or still processing'}), 404
 
 @app.route('/api/v1/music/results/<request_id>', methods=['GET'])
 def get_music_results(request_id):
@@ -92,11 +99,8 @@ def get_music_results(request_id):
     result = music_results.get(request_id)
     if result:
         return jsonify(result)
-    return jsonify({'error': 'Results not found or still processing'}), 404
-
-if __name__ == '__main__':
-    start_consumer_threads()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    else:
+        return jsonify({'error': 'Results not found or still processing'}), 404
 
 @app.route('/api/v1/track_interaction', methods=['POST'])
 def track_interaction():
@@ -105,15 +109,15 @@ def track_interaction():
         if not data or 'request_id' not in data or 'interaction_type' not in data:
             return jsonify({'error': 'Missing required fields in request'}), 400
 
-        # Send the interaction data to the Kafka producer
-        send_interaction_to_kafka(data)
+        producer = create_kafka_producer()
+        send_interaction_to_kafka(data, producer)
 
         return jsonify({'status': 'success'})
     except Exception as e:
         logger.error(f"Error tracking interaction: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-def send_interaction_to_kafka(interaction_data):
-    """Send user interaction data to Kafka"""
-    producer.send(USER_INTERACTION_TOPIC, interaction_data)
-    producer.flush()
+if __name__ == '__main__':
+    start_consumer_threads()
+    app.run(host='0.0.0.0', port=5000, debug=True)
+    
