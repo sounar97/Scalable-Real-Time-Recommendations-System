@@ -1,0 +1,13 @@
+Flask==2.1.1
+kafka-python==2.0.2
+confluent-kafka==1.8.2
+requests==2.27.1
+gunicorn==20.1.0  # for deploying Flask in production
+
+# Logging and other utility libraries
+logging==0.5.1.2
+
+# Data handling (if required for recommendations or processing)
+pandas==1.4.3
+numpy==1.22.4
+
